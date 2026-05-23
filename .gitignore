@@ -1,0 +1,37 @@
+# Python-generated files
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+**/.pytest_cache/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.venv*/
+**/.venv*/
+.uv-validation-venv/
+.uv-cache/
+
+# Old scratch backend outside the procurement-agent project
+/backend/
+
+# Local environment and deployment state
+.env
+.env.*
+!.env.example
+.vercel/
+
+# Frontend generated files
+node_modules/
+dist/
+
+# Runtime output
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3

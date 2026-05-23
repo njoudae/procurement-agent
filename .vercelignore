@@ -1,0 +1,17 @@
+**/.env
+**/.env.*
+!**/.env.example
+
+.git/
+.venv/
+.uv-cache/
+.uv-validation-venv/
+backend/
+procurement-agent/backend/
+procurement-agent/logs/
+
+**/__pycache__/
+**/.pytest_cache/
+**/node_modules/
+**/dist/
+*.log

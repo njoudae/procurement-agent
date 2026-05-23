@@ -1,0 +1,62 @@
+flowchart TD
+    START([START]) --> receive_request[receive_request]
+    receive_request --> detect_input_source{detect_input_source}
+
+    detect_input_source -->|Only email text| extract_email_text[extract_email_text]
+    detect_input_source -->|Only attachment| detect_attachments[detect_attachments]
+    detect_input_source -->|Email text and attachment| extract_email_text
+    detect_input_source -->|No usable input| needs_review_input[NeedsReview: no usable input]
+
+    extract_email_text --> email_has_attachment{Attachments present?}
+    email_has_attachment -->|No| merge_context[merge_context]
+    email_has_attachment -->|Yes| detect_attachments
+
+    detect_attachments --> extract_attachment_content[extract_attachment_content]
+    extract_attachment_content --> attachment_ok{Attachment extraction OK?}
+    attachment_ok -->|Yes| merge_context
+    attachment_ok -->|No| needs_review_attachment[NeedsReview: attachment extraction error]
+    needs_review_attachment --> merge_context
+
+    merge_context --> extract_request_fields[extract_request_fields]
+    extract_request_fields --> extraction_ok{Field extraction OK?}
+    extraction_ok -->|No| needs_review_extraction[NeedsReview: extraction failed]
+    extraction_ok -->|Yes| validate_extraction[validate_extraction]
+
+    validate_extraction --> valid_extraction{Valid extraction?}
+    valid_extraction -->|No| needs_review_validation[NeedsReview: missing fields, low confidence, or conflicts]
+    valid_extraction -->|Yes| search_vendors[search_vendors]
+
+    search_vendors --> vendors_found{Vendors found?}
+    vendors_found -->|No| needs_review_vendors[NeedsReview: no vendors found]
+    vendors_found -->|Yes| rank_vendors[rank_vendors]
+
+    rank_vendors --> selected_vendors{Selected vendors?}
+    selected_vendors -->|No| needs_review_vendors
+    selected_vendors -->|Yes| generate_rfq_drafts[generate_rfq_drafts]
+
+    generate_rfq_drafts --> email_guardrail_check[email_guardrail_check]
+    email_guardrail_check --> guardrail_passed{Guardrail passed?}
+    guardrail_passed -->|No| needs_review_guardrail[NeedsReview: email guardrail failed]
+    guardrail_passed -->|Yes| create_pending_approval[create_pending_approval]
+
+    needs_review_input --> create_pending_approval
+    needs_review_extraction --> create_pending_approval
+    needs_review_validation --> create_pending_approval
+    needs_review_vendors --> create_pending_approval
+    needs_review_guardrail --> create_pending_approval
+
+    create_pending_approval --> wait_for_admin_approval[wait_for_admin_approval]
+    wait_for_admin_approval --> admin_decision{Admin decision}
+
+    admin_decision -->|Reject| log_rejection[log rejection]
+    log_rejection --> END_REJECT([END])
+
+    admin_decision -->|Approve| execute_approved_action[execute_approved_action]
+    admin_decision -->|Edit and approve| execute_approved_action
+
+    execute_approved_action --> execution_ok{Execution OK?}
+    execution_ok -->|No| needs_review_execution[NeedsReview or Failed: execution error]
+    execution_ok -->|Yes| log_completion[log_completion]
+
+    needs_review_execution --> log_completion
+    log_completion --> END([END])
