@@ -1,0 +1,16 @@
+{
+  "framework": null,
+  "installCommand": "pip install -r requirements.txt",
+  "buildCommand": null,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/app/index.py"
+    }
+  ],
+  "functions": {
+    "app/index.py": {
+      "maxDuration": 60
+    }
+  }
+}
