@@ -27,6 +27,15 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install backend dependencies into deployment package
+        shell: bash
+        run: |
+          cd "${BACKEND_PACKAGE_PATH}"
+          uv pip install --python "$(which python)" --target=".python_packages/lib/site-packages" -r requirements.txt
+
       - name: Create deployment package
         shell: bash
         run: |
