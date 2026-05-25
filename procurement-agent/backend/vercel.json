@@ -5,11 +5,11 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/app/index.py"
+      "destination": "/api/index.py"
     }
   ],
   "functions": {
-    "app/index.py": {
+    "api/index.py": {
       "maxDuration": 60
     }
   }
