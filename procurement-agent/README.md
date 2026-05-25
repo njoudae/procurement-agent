@@ -1,115 +1,274 @@
-# Procurement Agent
+# ProcureAI - Procurement Agent System
 
-A production-oriented AI procurement assistant built with FastAPI, LangGraph, OpenAI, SQL Server, SQLAlchemy, and React.
+ProcureAI is a production-oriented AI procurement assistant that helps procurement teams process purchase requests, extract structured information, match vendors, draft RFQ emails, and route sensitive actions through admin approval before execution.
 
-The system is intentionally approval-first: the agent proposes RFQ drafts, stores them as `PendingApproval`, and waits for an admin to approve, edit, or reject before any execution step can run.
+This is not a simple chatbot. It is a stateful agentic workflow system with a FastAPI backend, LangGraph orchestration, SQL Server persistence, document extraction, approval controls, execution logging, and a React admin dashboard.
 
-Document and attachment inputs are treated as untrusted external data. The backend validates file type, size, MIME type, and filename, stores files locally for development, extracts and sanitizes content, detects prompt-injection phrases, logs extraction errors, and preserves field source traceability.
+## Key Features
+
+- Create and manage purchase requests.
+- Extract structured procurement fields with OpenAI.
+- Process email text and supported attachments.
+- Extract content from PDF, Excel, CSV, Word, and TXT files.
+- Detect document prompt-injection attempts.
+- Store vendors, requests, actions, approvals, email logs, attachments, and execution logs in SQL Server.
+- Search and rank active vendors by category, department, and rating.
+- Generate professional RFQ email drafts.
+- Require admin approval before execution.
+- Prevent duplicate execution with idempotency keys.
+- Log every workflow step and error.
+- Provide a React dashboard for review, approval, rejection, and vendor management.
+
+## Tech Stack
+
+### Backend
+
+- Python 3.12
+- FastAPI
+- LangGraph
+- OpenAI API
+- SQL Server
+- SQLAlchemy
+- pyodbc
+- Pydantic
+- pdfplumber, PyMuPDF, pypdf
+- pandas, openpyxl
+- python-docx
+- Python logging
+- Docker-ready backend structure
+
+### Frontend
+
+- React
+- Vite
+- React Router
+- Lucide React icons
+- CSS dashboard UI
+- Vercel-ready frontend config
+
+### Database
+
+- Microsoft SQL Server locally or Azure SQL Database in production.
+- SQLite is allowed only for explicit automated test mode.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  A[Admin request] --> B[FastAPI]
-  B --> C[Email and attachment intake]
-  C --> D[Extract and sanitize documents]
-  D --> E[Merge source context]
-  E --> F[Validate with Pydantic]
-  F --> G[Search SQL Server vendors]
-  G --> H[Generate RFQ drafts]
-  H --> I[Store AgentAction PendingApproval]
-  I --> J[Admin dashboard]
-  J --> K{Decision}
-  K -->|Approve or edit approve| L[Mock send or SMTP send]
-  K -->|Reject| M[Stop]
-  L --> N[EmailLogs and ExecutionLogs]
+    Admin[Admin Dashboard] --> API[FastAPI Backend]
+    API --> Agent[LangGraph Agent]
+    Agent --> Extract[Extract Request Fields]
+    Agent --> Docs[Document Processing]
+    Agent --> Vendors[Vendor Search]
+    Vendors --> SQL[(SQL Server)]
+    Extract --> Draft[RFQ Draft Generation]
+    Draft --> Approval[Pending Approval]
+    Approval --> Admin
+    Admin --> Decision{Approve?}
+    Decision -->|Reject| Stop[Stop and Log]
+    Decision -->|Approve/Edit| Execute[Execution Queue]
+    Execute --> EmailLogs[Email Logs]
+    Execute --> ExecLogs[Execution Logs]
+    EmailLogs --> SQL
+    ExecLogs --> SQL
 ```
 
 ## Agent Workflow
 
-The LangGraph nodes are implemented as separate functions:
+The LangGraph workflow is implemented with separate nodes:
 
-1. `receive_email`
-2. `detect_attachments`
+1. `receive_request`
+2. `detect_input_source`
 3. `extract_email_text`
-4. `extract_attachment_content`
-5. `merge_context`
-6. `validate_extraction`
-7. `search_vendors`
-8. `rank_vendors`
-9. `generate_rfq_drafts`
-10. `email_guardrail_check`
-11. `create_pending_approval`
-12. `wait_for_admin_approval`
-13. `execute_approved_action`
-14. `log_completion`
+4. `detect_attachments`
+5. `extract_attachment_content`
+6. `merge_context`
+7. `extract_request_fields`
+8. `validate_extraction`
+9. `search_vendors`
+10. `rank_vendors`
+11. `generate_rfq_drafts`
+12. `email_guardrail_check`
+13. `create_pending_approval`
+14. `wait_for_admin_approval`
+15. `execute_approved_action`
+16. `log_completion`
 
-Initial request processing stops after the pending approval is created. `execute_approved_action` is called only by the approval API after an admin decision.
+The agent proposes actions only. Admin approval is required before execution.
 
 ## Document Processing
 
-Supported uploads:
+Supported input types:
 
+- Email body text
 - PDF
-- XLSX
-- XLS
+- XLSX / XLS
 - CSV
 - DOCX
 - TXT
-- PNG/JPG as OCR-ready placeholders
+- PNG/JPG OCR-ready placeholder
 
-Processing rules:
+Document guardrails:
 
-- If email text and attachments exist, the system reads both and merges them.
-- If only attachments exist, it processes attachments and continues normally.
-- Structured attachment values such as quantities and prices are preferred over vague body text.
-- Conflicts are preserved in `conflicts` and force `NeedsReview`.
-- Extraction failures are logged and do not crash the workflow.
-- Suspicious instructions such as `ignore previous instructions`, `bypass approval`, or `reveal system prompt` are removed before LLM processing and logged as review findings.
-
-Attachment metadata is stored in `RequestAttachments`. Extraction output is stored in `DocumentExtractions` with text, tables, structured quotation details, confidence, errors, and review flags.
+- Files are treated as untrusted input.
+- File names are sanitized.
+- Suspicious extensions are rejected.
+- File size and MIME type are validated.
+- Extracted text and table cells are sanitized.
+- Prompt-injection phrases such as `ignore previous instructions`, `bypass approval`, and `reveal system prompt` are detected and logged.
+- Extraction failures mark the request as `NeedsReview` instead of crashing the workflow.
 
 ## Project Structure
 
 ```text
 procurement-agent/
-+-- backend/
-|   +-- app/
-|   +-- sql/
-|   +-- requirements.txt
-|   +-- .env.example
-|   +-- Dockerfile
-+-- frontend/
-|   +-- src/
-|   +-- package.json
-|   +-- .env.example
-+-- README.md
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   ├── agent/
+│   │   ├── services/
+│   │   ├── tools/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   └── schemas.py
+│   ├── scripts/
+│   ├── sql/
+│   ├── tests/
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── vercel.json
+├── frontend/
+│   ├── src/
+│   ├── package.json
+│   ├── vite.config.js
+│   └── vercel.json
+├── docs/
+│   ├── agent_pipeline.md
+│   └── agent_pipeline.mmd
+└── README.md
 ```
 
-## Create the SQL Server Database
+## Required Environment Variables
 
-Normal local runtime requires SQL Server. SQLite is allowed only for automated tests with `ENVIRONMENT=test`.
+Create a backend environment file:
+
+```powershell
+cd procurement-agent/backend
+copy .env.example .env
+```
+
+If `.env.example` is not present, create `.env` manually.
+
+### Backend `.env`
+
+For local SQL Server:
+
+```env
+APP_NAME=Procurement Agent
+ENVIRONMENT=development
+LOG_LEVEL=INFO
+
+DB_SERVER=localhost,1433
+DB_NAME=procurement
+DB_USER=sa
+DB_PASSWORD=your_sql_password
+DB_DRIVER=
+DB_TRUST_SERVER_CERTIFICATE=true
+DB_ENCRYPT=no
+DATABASE_URL=
+
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4.1-mini
+
+FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
+ADMIN_API_TOKEN=change-this-local-dev-token
+
+UPLOAD_STORAGE_DIR=storage/uploads
+MAX_UPLOAD_BYTES=10485760
+MAX_DOCUMENT_CHARS=24000
+
+ENABLE_REAL_EMAIL_SEND=false
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+```
+
+For Azure SQL Database:
+
+```env
+DB_SERVER=your-server-name.database.windows.net,1433
+DB_NAME=your_database_name
+DB_USER=your_sql_admin_user
+DB_PASSWORD=your_sql_admin_password
+DB_DRIVER=ODBC Driver 18 for SQL Server
+DB_ENCRYPT=yes
+DB_TRUST_SERVER_CERTIFICATE=false
+```
+
+Do not commit `.env` files. They are intentionally ignored by Git.
+
+### Frontend `.env`
+
+Create:
+
+```powershell
+cd procurement-agent/frontend
+copy .env.example .env
+```
+
+Set:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+For a deployed frontend, use the deployed backend URL:
+
+```env
+VITE_API_BASE_URL=https://your-backend-url
+```
+
+Never put database credentials, OpenAI keys, SMTP passwords, or admin tokens in frontend environment variables.
+
+## SQL Server Setup
+
+### Local SQL Server
 
 1. Install SQL Server Developer or SQL Server Express.
-2. Enable SQL Server Authentication and create or enable a SQL login.
-3. Open SQL Server Configuration Manager.
-4. Enable `TCP/IP` for the SQL Server instance.
-5. Set or verify TCP port `1433` under `IPAll`.
-6. Restart the SQL Server service.
-7. Open SQL Server Management Studio or Azure Data Studio.
-8. Connect with an account that can create databases.
-9. Run [backend/sql/schema.sql](backend/sql/schema.sql).
-10. Run [backend/sql/seed.sql](backend/sql/seed.sql) for example vendors and a sample request.
+2. Enable SQL Server Authentication.
+3. Enable TCP/IP in SQL Server Configuration Manager.
+4. Set TCP port to `1433`.
+5. Restart SQL Server.
+6. Create a database named `procurement`.
+7. Configure the backend `.env`.
 
-The app also calls `Base.metadata.create_all()` at startup, but the SQL script is provided for controlled environments.
+### Azure SQL Database
+
+Recommended settings:
+
+- Authentication: SQL and Microsoft Entra authentication
+- Networking: Public endpoint
+- Allow Azure services: Yes
+- Add your current client IP to firewall rules
+- Minimum TLS: 1.2
+- Backup redundancy: Locally-redundant
+
+Use the Azure SQL server name in this format:
+
+```env
+DB_SERVER=your-server.database.windows.net,1433
+```
 
 ## Install ODBC Driver
 
 Windows:
 
-1. Install Microsoft ODBC Driver 18 for SQL Server from Microsoft, or use Driver 17 if it is already installed.
-2. The backend auto-detects `ODBC Driver 18 for SQL Server` first, then `ODBC Driver 17 for SQL Server`.
-3. To force a driver, set `DB_DRIVER=ODBC Driver 17 for SQL Server` or `DB_DRIVER=ODBC Driver 18 for SQL Server`.
+1. Install Microsoft ODBC Driver 18 for SQL Server.
+2. If Driver 18 is unavailable, Driver 17 can be used locally.
 
 Check installed drivers:
 
@@ -117,67 +276,7 @@ Check installed drivers:
 uv run python -c "import pyodbc; print(pyodbc.drivers())"
 ```
 
-Linux:
-
-```bash
-curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-sudo apt-get update
-sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
-```
-
-## Configure Environment
-
-Backend:
-
-```bash
-cd procurement-agent/backend
-cp .env.example .env
-```
-
-Set:
-
-```env
-ENVIRONMENT=development
-DB_SERVER=localhost,1433
-DB_NAME=ProcurementAgent
-DB_USER=your_sql_user
-DB_PASSWORD=your_sql_password
-DB_DRIVER=
-DB_TRUST_SERVER_CERTIFICATE=true
-DB_ENCRYPT=no
-DATABASE_URL=
-OPENAI_API_KEY=your_openai_key
-ADMIN_API_TOKEN=change-this-admin-token
-UPLOAD_STORAGE_DIR=storage/uploads
-MAX_UPLOAD_BYTES=10485760
-MAX_DOCUMENT_CHARS=24000
-FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
-```
-
-Leave `DB_DRIVER` empty to auto-detect Driver 18, then Driver 17. Do not set `DATABASE_URL=sqlite...` for normal runtime; startup rejects SQLite unless `ENVIRONMENT=test`.
-
-Frontend:
-
-```bash
-cd procurement-agent/frontend
-cp .env.example .env
-```
-
-Set:
-
-```env
-VITE_API_BASE_URL=http://127.0.0.1:8000
-```
-
-Do not put database credentials, OpenAI keys, SMTP credentials, or admin tokens in frontend environment variables.
-In local development, the backend creates an HttpOnly dev admin session cookie from `POST /auth/dev-login`.
-Production should replace dev auth with SSO/OIDC, server-side sessions, RBAC claims, CSRF protection, and audit identity.
-
-## Run Backend
-
-Backend dependencies are managed from the repository root with `uv`, Python 3.12, `pyproject.toml`, and `uv.lock`.
-`backend/requirements.txt` is kept only as a legacy/reference mirror.
+## Run Locally
 
 From the repository root:
 
@@ -185,139 +284,104 @@ From the repository root:
 uv python install 3.12
 uv venv --python 3.12
 uv sync
+```
+
+Run backend checks:
+
+```powershell
 cd procurement-agent/backend
-uv run python scripts/init_db.py
 uv run python scripts/check_environment.py
+uv run python scripts/init_db.py
 uv run python scripts/seed_data.py
 uv run python scripts/check_fullstack_config.py
+```
+
+Start backend:
+
+```powershell
 uv run python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Health check:
-
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/health/db
-```
-
-Or use the helper:
+Start frontend:
 
 ```powershell
-uv run python scripts/start_backend.py
-```
-
-On Windows, you can run the uv setup helper from the repository root:
-
-```powershell
-.\scripts\setup_windows_uv.ps1
-```
-
-If an old `.venv` blocks uv from switching to Python 3.12, close terminals/editors using it and remove it from the repository root:
-
-```powershell
-Remove-Item -Recurse -Force .venv
-```
-
-If uv reports a cache permission error, remove the workspace cache and rerun setup:
-
-```powershell
-Remove-Item -Recurse -Force .uv-cache
-```
-
-## Local Automation Scripts
-
-Run these from `procurement-agent/backend`:
-
-```powershell
-uv run python scripts/init_db.py
-uv run python scripts/check_environment.py
-uv run python scripts/check_fullstack_config.py
-uv run python scripts/seed_data.py
-uv run python scripts/e2e_test.py
-uv run python scripts/start_backend.py
-```
-
-- `check_environment.py` verifies Python packages, required environment variables, ODBC driver selection, SQL Server TCP reachability, pyodbc login, and required tables.
-- `init_db.py` safely creates missing SQLAlchemy tables without dropping data.
-- `seed_data.py` safely inserts fake `example.com` vendors and a sample request only if missing.
-- `e2e_test.py` runs a deterministic full workflow using the configured database and mocked local extraction.
-- `start_backend.py` runs the environment check before starting Uvicorn.
-
-## Run Frontend
-
-```bash
-cd procurement-agent/frontend
+cd ../frontend
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open:
 
-## Local CORS Troubleshooting
+```text
+http://localhost:5173
+```
 
-If Uvicorn logs `400 Bad Request` for `OPTIONS` requests, check the local frontend and backend origins:
+Backend docs:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Health checks:
 
 ```powershell
-cd procurement-agent/backend
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/health/db
+```
+
+## Local Automation Scripts
+
+Run from `procurement-agent/backend`:
+
+```powershell
+uv run python scripts/check_environment.py
+uv run python scripts/init_db.py
+uv run python scripts/seed_data.py
+uv run python scripts/e2e_test.py
 uv run python scripts/check_fullstack_config.py
+uv run python scripts/start_backend.py
 ```
 
-For local development, backend `FRONTEND_ORIGIN` should include:
+Script purpose:
 
-```env
-FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
-```
-
-Frontend `.env` should use:
-
-```env
-VITE_API_BASE_URL=http://127.0.0.1:8000
-```
-
-Test a preflight manually:
-
-```powershell
-curl.exe -i -X OPTIONS "http://127.0.0.1:8000/requests/overview" -H "Origin: http://localhost:5173" -H "Access-Control-Request-Method: GET"
-```
-
-Expected: HTTP 200 or 204 with `Access-Control-Allow-Origin` present.
-
-If Vite opens as a LAN URL such as `http://192.168.1.7:5173`, keep `VITE_API_BASE_URL=http://127.0.0.1:8000` when using the browser on the same machine. Development CORS allows private LAN frontend origins on ports `5173` and `3000`; production still requires explicit origins and does not use wildcard CORS.
-
-## Docker Backend
-
-```bash
-cd procurement-agent/backend
-docker build -t procurement-agent-backend .
-docker run --env-file .env -p 8000:8000 procurement-agent-backend
-```
+- `check_environment.py`: validates Python packages, env vars, ODBC driver, SQL Server connection, and tables.
+- `init_db.py`: creates missing tables and safely adds missing columns without dropping data.
+- `seed_data.py`: inserts sample vendors and a sample request idempotently.
+- `e2e_test.py`: runs a full workflow test with mocked deterministic extraction.
+- `check_fullstack_config.py`: validates frontend/backend URL and CORS configuration.
+- `start_backend.py`: runs checks before starting Uvicorn.
 
 ## Test the Workflow
 
-1. Start SQL Server and run the schema and seed scripts.
-2. Start the backend.
-3. Start the frontend.
-4. Go to `Create Request`.
-5. Submit this example:
+Example request:
 
 ```text
 Sarah from IT needs 12 business laptops for onboarding next month. Budget is around 18000 USD. Please request quotes from approved IT hardware vendors.
 ```
 
-6. Open the created request and inspect logs.
-7. Go to `Pending Approvals`.
-8. Review the proposed RFQ drafts.
-9. Approve, edit and approve, or reject.
+Expected flow:
 
-After approval, the backend creates `EmailLogs`. By default, messages are marked `ReadyToSend` and are not actually sent.
+1. Create a request from the dashboard.
+2. Agent extracts requester, department, item, category, quantity, urgency, budget, and date.
+3. Agent searches active vendors in SQL Server.
+4. Agent drafts RFQ emails.
+5. Proposed action is stored as `PendingApproval`.
+6. Admin reviews the request.
+7. Admin approves, edits and approves, or rejects.
+8. Execution logs and email logs are stored.
 
 ## API Endpoints
 
+- `GET /health`
+- `GET /health/db`
+- `POST /auth/dev-login`
+- `GET /auth/me`
+- `POST /auth/logout`
 - `POST /requests`
 - `POST /requests/email`
 - `GET /requests`
-- `GET /requests/{request_id}`
 - `GET /requests/overview`
+- `GET /requests/{request_id}`
 - `GET /approvals/pending`
 - `POST /approvals/{action_id}/approve`
 - `POST /approvals/{action_id}/reject`
@@ -327,80 +391,106 @@ After approval, the backend creates `EmailLogs`. By default, messages are marked
 - `POST /vendors`
 - `PUT /vendors/{vendor_id}`
 
-## Approval System
+## Deployment Notes
 
-The agent never sends or executes sensitive actions during extraction and drafting.
+### Frontend on Vercel
 
-- All proposed RFQs are stored in `AgentActions` with `PendingApproval`.
-- Admin approval creates an `Approvals` row.
-- Only approved actions can call `execute_approved_action`.
-- Rejected actions update the request status and do not execute.
-- Edited approvals replace `ProposedOutput` before execution.
+The frontend can be deployed to Vercel from:
 
-## What Is Mocked
+```text
+procurement-agent/frontend
+```
 
-Email delivery is mocked by default.
+Vercel settings:
 
-When `ENABLE_REAL_EMAIL_SEND=false`, approved RFQs create `EmailLogs` with status `ReadyToSend`. To send real email, configure SMTP settings and set:
+```text
+Framework: Vite
+Build command: npm run build
+Output directory: dist
+```
+
+Set this Vercel environment variable:
 
 ```env
-ENABLE_REAL_EMAIL_SEND=true
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=your_user
-SMTP_PASSWORD=your_password
-SMTP_FROM_EMAIL=procurement@example.com
+VITE_API_BASE_URL=https://your-backend-url
 ```
+
+### Backend Deployment
+
+The backend includes Vercel configuration, but this project uses SQL Server through `pyodbc` and an ODBC driver. That is not always reliable on Vercel serverless. The recommended production backend hosts are:
+
+- Azure App Service
+- Azure Container Apps
+- Render Docker service
+- Railway
+- A VPS with Docker
+
+If deploying the backend outside local development, configure:
+
+```env
+ENVIRONMENT=production
+DB_SERVER=your-server.database.windows.net,1433
+DB_NAME=your_database
+DB_USER=your_user
+DB_PASSWORD=your_password
+DB_DRIVER=ODBC Driver 18 for SQL Server
+DB_ENCRYPT=yes
+DB_TRUST_SERVER_CERTIFICATE=false
+OPENAI_API_KEY=your_openai_key
+ADMIN_API_TOKEN=strong_random_secret
+FRONTEND_ORIGIN=https://your-vercel-domain
+```
+
+Production auth should replace local dev auth with SSO/OIDC, server-side sessions, RBAC, CSRF protection, and audit identity.
 
 ## Safety Controls
 
-- No frontend secrets.
-- SQL Server credentials stay in backend `.env`.
-- Pydantic validates LLM extraction and RFQ drafts.
-- Missing required fields or low confidence marks the request `NeedsReview`.
-- Vendor data is read by the agent and changed only through admin endpoints.
-- There are no delete endpoints.
-- Every workflow node writes an `ExecutionLogs` row.
-- Execution logs include placeholders for latency, LLM token usage, and LLM cost.
-- Uploaded files are stored under `UPLOAD_STORAGE_DIR` for development; use object storage in production.
-- File names are sanitized, path traversal is rejected, suspicious extensions are rejected, and max upload size is enforced.
-- Errors are logged without exposing configured secret names.
-- `ADMIN_API_TOKEN` signs a local-development HttpOnly admin session cookie; it is never placed in frontend code.
-- `AgentActions` and `EmailLogs` use idempotency keys to prevent duplicate proposals and duplicate email execution.
-- Action status transitions are enforced by a state machine; invalid paths such as `Rejected -> Executed` are rejected.
-- Reusable decorators cover latency measurement, node execution logging, tool error handling, permission checks, and approval checks before risky execution.
+- The agent does not send emails without admin approval.
+- The agent does not delete database records.
+- The agent does not overwrite vendor data automatically.
+- LLM output is validated with Pydantic.
+- Low-confidence or incomplete extraction routes to `NeedsReview`.
+- Guardrail failures stop execution.
+- Rejected actions cannot execute.
+- Duplicate execution is blocked with idempotency keys.
+- Secrets are never stored in frontend code.
+- Documents are sanitized before LLM processing.
+- Prompt-injection attempts are logged.
+- SQL queries use SQLAlchemy parameterization.
+- Execution logs are stored for auditability.
 
-## Testing
+## Tests
 
-Sync backend dependencies from the repository root with `uv sync`, then run:
+Run backend tests:
 
 ```powershell
 cd procurement-agent/backend
 uv run pytest tests -q
 ```
 
-The included tests cover:
+Covered areas:
 
-- vendor search
-- request extraction validation
-- prompt-injection guardrails
-- approval/status transition rules
-- duplicate action creation
-- duplicate email execution prevention
-- file extraction failure handling
+- Vendor search
+- Field validation
+- Prompt-injection guardrails
+- Status transition rules
+- Duplicate action prevention
+- Duplicate email execution prevention
+- Document extraction failure handling
+- Graph workflow route checks
 
-## Production Hardening Notes
+## Production Hardening
 
-- Replace local dev auth with SSO/OIDC, server-side sessions, RBAC, audit identity, and CSRF protection.
-- Move background execution from FastAPI `BackgroundTasks` to Celery, RQ, or a durable queue.
-- Add migrations with Alembic instead of automatic `create_all`.
-- Replace local attachment storage with S3, Azure Blob Storage, or another object storage provider.
-- Add OCR workers for scanned PDFs and image attachments.
-- Add antivirus scanning and content disarm/reconstruction for uploaded files.
-- Add row-level audit history for edited approvals and vendor changes.
-- Add rate limits and request body size limits.
-- Store LLM prompts and model versions with action metadata for traceability.
-- Add retry queues and dead-letter handling for SMTP and transient database failures.
-- Encrypt secrets with your deployment secret manager.
-- Add integration tests against a SQL Server test container.
-- Add structured logging to a central sink such as OpenTelemetry, Azure Monitor, or Datadog.
+Recommended next steps:
+
+- Replace dev auth with production identity management.
+- Add Alembic migrations instead of relying on automatic metadata sync.
+- Move execution jobs to Celery, RQ, or another durable queue.
+- Store attachments in Azure Blob Storage or S3.
+- Add antivirus scanning for uploads.
+- Add OCR workers for scanned PDFs/images.
+- Add rate limiting.
+- Add structured logs to Azure Monitor, Datadog, or OpenTelemetry.
+- Add a real SMTP provider if email sending is required.
+- Rotate any local secrets that were ever exposed during development.
+
