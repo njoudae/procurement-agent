@@ -11,45 +11,40 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: ProcurementAgentSystem
-  PYTHON_VERSION: "3.12"
   BACKEND_PACKAGE_PATH: procurement-agent/backend
+  IMAGE_NAME: ghcr.io/njoudae/procurement-agent-backend
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.BACKEND_PACKAGE_PATH }}
+          file: ${{ env.BACKEND_PACKAGE_PATH }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
 
-      - name: Install backend dependencies into deployment package
-        shell: bash
-        run: |
-          cd "${BACKEND_PACKAGE_PATH}"
-          uv pip install --python "$(which python)" --target=".python_packages/lib/site-packages" -r requirements.txt
-
-      - name: Create deployment package
-        shell: bash
-        run: |
-          cd "${BACKEND_PACKAGE_PATH}"
-          zip -r ../../backend-release.zip . \
-            -x ".env" ".env.*" "!.env.example" \
-            -x ".venv/*" ".venv*/**" "__pycache__/*" "**/__pycache__/*" \
-            -x ".pytest_cache/*" "**/.pytest_cache/*" \
-            -x "dev.db" "*.db" "*.sqlite" "*.sqlite3" \
-            -x "logs/*" "storage/*" "*.log"
-
-      - name: Deploy to Azure App Service
+      - name: Deploy container to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: backend-release.zip
+          images: ${{ env.IMAGE_NAME }}:${{ github.sha }}
