@@ -48,7 +48,7 @@ This is not a simple chatbot. It is a stateful agentic workflow system with a Fa
 
 ### Database
 
-- Microsoft SQL Server locally or Azure SQL Database in production.
+- Microsoft SQL Server Azure SQL Database in production.
 - SQLite is allowed only for explicit automated test mode.
 
 ## Architecture
