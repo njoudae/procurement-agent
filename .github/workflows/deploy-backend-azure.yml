@@ -1,0 +1,46 @@
+name: Deploy Backend to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "procurement-agent/backend/**"
+      - ".github/workflows/deploy-backend-azure.yml"
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: ProcurementAgentSystem
+  PYTHON_VERSION: "3.12"
+  BACKEND_PACKAGE_PATH: procurement-agent/backend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Create deployment package
+        shell: bash
+        run: |
+          cd "${BACKEND_PACKAGE_PATH}"
+          zip -r ../../backend-release.zip . \
+            -x ".env" ".env.*" "!.env.example" \
+            -x ".venv/*" ".venv*/**" "__pycache__/*" "**/__pycache__/*" \
+            -x ".pytest_cache/*" "**/.pytest_cache/*" \
+            -x "dev.db" "*.db" "*.sqlite" "*.sqlite3" \
+            -x "logs/*" "storage/*" "*.log"
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: backend-release.zip
